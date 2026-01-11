@@ -121,12 +121,10 @@ class DaggerRolloutWorker(Worker):
     def update_beta(self, rollout_epoch: int):
         """
         Update expert intervention rate (beta) based on rollout epoch and schedule.
-        
+
         Args:
             rollout_epoch: Current rollout epoch number (0-indexed)
         """
-        old_beta = self.beta
-        
         if self.beta_schedule == "constant":
             self.beta = self.initial_beta
         elif self.beta_schedule == "linear":
@@ -262,7 +260,7 @@ class DaggerRolloutWorker(Worker):
         """
         - When intervene_actions is provided, update both action and model_action
         - model_action is used for training, so we need to update it when action is updated
-        
+
         For other models:
         - forward_inputs contains action (environment-space)
         - We only update action
