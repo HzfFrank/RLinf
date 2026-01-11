@@ -1371,13 +1371,21 @@ class EmbodiedRolloutResult:
         if len(transition_dict) > 0:
             rollout_result_dict["transitions"] = transition_dict
 
+        # 如果 dones 为 None，说明 buffer 是空的（例如，only_save_intervened=True 且没有任何步骤被保存）
+        # 在这种情况下，直接返回，不进行断言检查
+        if rollout_result_dict["dones"] is None:
+            return rollout_result_dict
+
         assert len(rollout_result_dict["dones"]) == len(
             rollout_result_dict["prev_values"]
         ), "dones and prev_values must have the same length"
+        
+        # 处理 rewards 为 None 的情况（例如，所有保存的步骤的 rewards 都为 None）
+        rewards_len = len(rollout_result_dict["rewards"]) if rollout_result_dict["rewards"] is not None else 0
         assert (
             len(rollout_result_dict["dones"])
-            == len(rollout_result_dict["rewards"]) + self.rollout_epoch
-        ), "dones length must be the length of rewards plus rollout_epoch"
+            == rewards_len + self.rollout_epoch
+        ), f"dones length ({len(rollout_result_dict['dones'])}) must be the length of rewards ({rewards_len}) plus rollout_epoch ({self.rollout_epoch})"
 
         return rollout_result_dict
 
@@ -1496,7 +1504,10 @@ class AsyncEmbodiedRolloutBuffer:
             truncations.append(await self.truncations.get())
             terminations.append(await self.terminations.get())
             rewards.append(await self.rewards.get())
-            transitions.append(await self.transitions.get())
+            # Transitions are optional (only added if model has q_head and last_extracted_obs is not None)
+            # Check if transitions queue has data, if not, skip (transitions are optional)
+            if self.transitions.qsize() > 0:
+                transitions.append(await self.transitions.get())
             forward_inputs.append(await self.forward_inputs.get())
 
         data = {
@@ -1505,9 +1516,13 @@ class AsyncEmbodiedRolloutBuffer:
             "truncations": torch.cat(truncations, dim=0).cpu().contiguous(),
             "terminations": torch.cat(terminations, dim=0).cpu().contiguous(),
             "rewards": torch.cat(rewards, dim=0).cpu().contiguous(),
-            "transitions": cat_list_of_dict_tensor(transitions),
         }
+        # Transitions are optional (only added if model has q_head and last_extracted_obs is not None)
+        transition_dict = cat_list_of_dict_tensor(transitions)
+        if len(transition_dict) > 0:
+            data["transitions"] = transition_dict
         data.update(cat_list_of_dict_tensor(forward_inputs))
+        
         splited_data = split_dict_to_chunk(data, split_size=split_num, dim=0)
 
         # Organize data
