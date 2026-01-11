@@ -101,19 +101,25 @@ class DaggerRolloutWorker(Worker):
             "top_p": self._sampling_params["top_p"],
             "max_new_tokens": self._length_params["max_new_token"],
         }
-        
+
         # setup beta
         if "expert_intervention_rate" in self.cfg.algorithm:
             self.initial_beta = self.cfg.algorithm.expert_intervention_rate
         else:
             self.initial_beta = 0.1
-        
+
         # Dynamic beta scheduling configuration
-        self.beta_schedule = self.cfg.algorithm.get("expert_intervention_rate_schedule", "constant")
+        self.beta_schedule = self.cfg.algorithm.get(
+            "expert_intervention_rate_schedule", "constant"
+        )
         self.beta_min = self.cfg.algorithm.get("expert_intervention_rate_min", 0.05)
-        self.beta_decay_steps = self.cfg.algorithm.get("expert_intervention_rate_decay_steps", 1000)
-        self.beta_decay_factor = self.cfg.algorithm.get("expert_intervention_rate_decay_factor", 0.9)
-        
+        self.beta_decay_steps = self.cfg.algorithm.get(
+            "expert_intervention_rate_decay_steps", 1000
+        )
+        self.beta_decay_factor = self.cfg.algorithm.get(
+            "expert_intervention_rate_decay_factor", 0.9
+        )
+
         # Initialize beta with initial value
         self.beta = self.initial_beta
         self.current_rollout_epoch = 0
@@ -128,27 +134,48 @@ class DaggerRolloutWorker(Worker):
         if self.beta_schedule == "constant":
             self.beta = self.initial_beta
         elif self.beta_schedule == "linear":
-            progress = min(1.0, rollout_epoch / self.beta_decay_steps) if self.beta_decay_steps > 0 else 0.0
-            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * (1 - progress)
+            progress = (
+                min(1.0, rollout_epoch / self.beta_decay_steps)
+                if self.beta_decay_steps > 0
+                else 0.0
+            )
+            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * (
+                1 - progress
+            )
         elif self.beta_schedule == "exponential":
-            progress = min(1.0, rollout_epoch / self.beta_decay_steps) if self.beta_decay_steps > 0 else 0.0
-            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * (self.beta_decay_factor ** progress)
+            progress = (
+                min(1.0, rollout_epoch / self.beta_decay_steps)
+                if self.beta_decay_steps > 0
+                else 0.0
+            )
+            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * (
+                self.beta_decay_factor**progress
+            )
         elif self.beta_schedule == "cosine":
             import math
-            progress = min(1.0, rollout_epoch / self.beta_decay_steps) if self.beta_decay_steps > 0 else 0.0
-            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * 0.5 * (1 + math.cos(math.pi * progress))
+
+            progress = (
+                min(1.0, rollout_epoch / self.beta_decay_steps)
+                if self.beta_decay_steps > 0
+                else 0.0
+            )
+            self.beta = self.beta_min + (self.initial_beta - self.beta_min) * 0.5 * (
+                1 + math.cos(math.pi * progress)
+            )
         else:
             # Unknown schedule, use constant
             self.beta = self.initial_beta
-        
+
         # Ensure beta is within valid range [0, 1]
         self.beta = max(0.0, min(1.0, self.beta))
         self.current_rollout_epoch = rollout_epoch
-        
+
         # Log beta changes (only on rank 0, print every epoch)
-        if hasattr(self, '_rank') and self._rank == 0:
-            print(f"[Beta Schedule] Rollout Epoch {rollout_epoch}: beta={self.beta:.4f} "
-                  f"(schedule={self.beta_schedule}, progress={min(1.0, rollout_epoch / self.beta_decay_steps) if self.beta_decay_steps > 0 else 0.0:.2f})")
+        if hasattr(self, "_rank") and self._rank == 0:
+            print(
+                f"[Beta Schedule] Rollout Epoch {rollout_epoch}: beta={self.beta:.4f} "
+                f"(schedule={self.beta_schedule}, progress={min(1.0, rollout_epoch / self.beta_decay_steps) if self.beta_decay_steps > 0 else 0.0:.2f})"
+            )
 
     def predict(self, env_obs, mode="train"):
         kwargs = (
@@ -171,10 +198,12 @@ class DaggerRolloutWorker(Worker):
         # 1-beta is probability of using expert policy (expert_model)
         # Note: In real-world setup, expert_model may be removed, so we check if it exists
         use_expert = False
-        has_expert_model = hasattr(self, "expert_model") and self.expert_model is not None
+        has_expert_model = (
+            hasattr(self, "expert_model") and self.expert_model is not None
+        )
         if mode == "train" and has_expert_model:
             use_expert = np.random.random() < self.beta
-        
+
         with torch.no_grad():
             if use_expert and has_expert_model:
                 actions, result = self.expert_model.predict_action_batch(
@@ -186,7 +215,7 @@ class DaggerRolloutWorker(Worker):
                     env_obs=env_obs,
                     **kwargs,
                 )
-        
+
         # Store whether expert was used in result for filtering (only relevant for simulation)
         # Convert to Python bool to ensure proper comparison
         result["use_expert"] = bool(use_expert)
@@ -281,7 +310,7 @@ class DaggerRolloutWorker(Worker):
                 ] + policy_action * (~intervene_flags[..., None])
                 action = action.reshape(action.shape[0], -1)
                 forward_inputs["action"] = action
-                
+
                 # For OpenPI, directly assign the environment-space action to model_action
                 # after reshaping to match model_action shape
                 # Note: This assumes the action format is compatible. If output_transform
@@ -290,30 +319,48 @@ class DaggerRolloutWorker(Worker):
                 if "model_action" in forward_inputs:
                     model_action_shape = forward_inputs["model_action"].shape
                     B = action.shape[0]
-                    num_steps, action_chunk, action_dim = model_action_shape[1], model_action_shape[2], model_action_shape[3]
-                    
+                    num_steps, action_chunk, action_dim = (
+                        model_action_shape[1],
+                        model_action_shape[2],
+                        model_action_shape[3],
+                    )
+
                     # Reshape action from [B, action_chunk * action_dim] to [B, num_steps, action_chunk, action_dim]
                     action_reshaped = action.reshape(B, 1, action_chunk, action_dim)
                     if num_steps > 1:
-                        action_reshaped = action_reshaped.expand(B, num_steps, action_chunk, action_dim)
-                    
+                        action_reshaped = action_reshaped.expand(
+                            B, num_steps, action_chunk, action_dim
+                        )
+
                     # Apply intervene_flags: only update model_action where intervene_flags is True
                     if intervene_flags is not None:
                         # Expand intervene_flags to match model_action shape
-                        flags_expanded = intervene_flags.unsqueeze(-1).unsqueeze(-1)  # [B, action_chunk, 1, 1]
+                        flags_expanded = intervene_flags.unsqueeze(-1).unsqueeze(
+                            -1
+                        )  # [B, action_chunk, 1, 1]
                         if len(model_action_shape) == 4:
                             flags_expanded = flags_expanded.unsqueeze(1).expand(
                                 -1, num_steps, -1, -1, -1
                             )  # [B, num_steps, action_chunk, 1, 1]
-                            flags_expanded = flags_expanded.squeeze(-1).squeeze(-1).unsqueeze(-1).expand_as(action_reshaped)  # [B, num_steps, action_chunk, action_dim]
-                            
+                            flags_expanded = (
+                                flags_expanded.squeeze(-1)
+                                .squeeze(-1)
+                                .unsqueeze(-1)
+                                .expand_as(action_reshaped)
+                            )  # [B, num_steps, action_chunk, action_dim]
+
                             # Mix: use action_reshaped where flag is True, use original model_action where flag is False
-                            original_model_action = forward_inputs["model_action"].to(action_reshaped.device)
-                            model_action = action_reshaped * flags_expanded + original_model_action * (~flags_expanded)
+                            original_model_action = forward_inputs["model_action"].to(
+                                action_reshaped.device
+                            )
+                            model_action = (
+                                action_reshaped * flags_expanded
+                                + original_model_action * (~flags_expanded)
+                            )
                     else:
                         # If no flags, replace all actions
                         model_action = action_reshaped
-                    
+
                     forward_inputs["model_action"] = model_action.to(
                         forward_inputs["model_action"].device
                     ).to(forward_inputs["model_action"].dtype)
@@ -335,7 +382,9 @@ class DaggerRolloutWorker(Worker):
             for _ in range(self.num_pipeline_stages)
         ]
 
-        self.only_save_intervened = self.cfg.algorithm.get("only_save_intervened", False)
+        self.only_save_intervened = self.cfg.algorithm.get(
+            "only_save_intervened", False
+        )
 
         n_chunk_steps = (
             self.cfg.env.train.max_steps_per_rollout_epoch
@@ -349,12 +398,14 @@ class DaggerRolloutWorker(Worker):
         ):
             # Update beta (expert intervention rate) based on current epoch
             self.update_beta(epoch_idx)
-            
+
             last_extracted_obs = [None for i in range(self.num_pipeline_stages)]
             last_forward_inputs = [
                 None for i in range(self.num_pipeline_stages)
             ]  # save actions
-            last_results = [None for i in range(self.num_pipeline_stages)]  # Store last step's predict result for only_save_intervened
+            last_results = [
+                None for i in range(self.num_pipeline_stages)
+            ]  # Store last step's predict result for only_save_intervened
 
             for _ in range(n_chunk_steps):
                 for stage_id in range(self.num_pipeline_stages):
@@ -370,7 +421,7 @@ class DaggerRolloutWorker(Worker):
                         env_output, extracted_obs
                     )
                     actions, result = self.predict(extracted_obs)
-                    
+
                     # For OpenPI, forward_inputs contains model_action but not action (environment-space)
                     # We need to add action to forward_inputs so that update_intervene_actions can work
                     current_forward_inputs = result["forward_inputs"].copy()
@@ -385,8 +436,10 @@ class DaggerRolloutWorker(Worker):
                                     sample_tensor = extracted_obs["states"]
                                 elif len(extracted_obs) > 0:
                                     sample_tensor = list(extracted_obs.values())[0]
-                                
-                                if sample_tensor is not None and torch.is_tensor(sample_tensor):
+
+                                if sample_tensor is not None and torch.is_tensor(
+                                    sample_tensor
+                                ):
                                     device = sample_tensor.device
                                 else:
                                     device = "cpu"
@@ -396,7 +449,7 @@ class DaggerRolloutWorker(Worker):
                         else:
                             actions_tensor = actions
                         current_forward_inputs["action"] = actions_tensor
-                    
+
                     # Check if the step we're saving (t-1) had intervention (like hil-serl: only save intervened steps)
                     # Note: We save last_forward_inputs[stage_id], which is the forward_inputs from step t-1
                     # So we need to check if step t-1 had intervention, not step t
@@ -406,22 +459,30 @@ class DaggerRolloutWorker(Worker):
                         # 1. Real-world: check intervene_flags from env_output (human intervention, no expert model needed)
                         # 2. Simulation: check if expert policy was used in step t-1 (last_results[stage_id]["use_expert"])
                         step_t_minus_1_intervened = False
-                        
+
                         # Priority 1: Check real-world human intervention (from env_output, which is step t-1's output)
                         # In real-world setup, expert_model is removed, human intervention is handled by update_intervene_actions
-                        if "intervene_flags" in env_output and env_output["intervene_flags"] is not None:
+                        if (
+                            "intervene_flags" in env_output
+                            and env_output["intervene_flags"] is not None
+                        ):
                             intervene_flags = env_output["intervene_flags"].bool()
                             step_t_minus_1_intervened = intervene_flags.any().item()
-                        
+
                         # Priority 2: Check simulation: if expert policy was used in step t-1
                         # Only check this if no real-world intervention was detected
                         # last_results[stage_id] contains step t-1's prediction result
-                        if not step_t_minus_1_intervened and last_results[stage_id] is not None:
+                        if (
+                            not step_t_minus_1_intervened
+                            and last_results[stage_id] is not None
+                        ):
                             if "use_expert" in last_results[stage_id]:
-                                step_t_minus_1_intervened = bool(last_results[stage_id]["use_expert"])
-                        
+                                step_t_minus_1_intervened = bool(
+                                    last_results[stage_id]["use_expert"]
+                                )
+
                         should_save = step_t_minus_1_intervened
-                    
+
                     # Store last step's forward_inputs (which contains obs_{t-1} and action_{t-1})
                     # This is consistent with SAC version and allows proper handling of intervene_actions
                     # For SFT training, storing (obs_{t-1}, action_{t-1}) is mathematically equivalent to (obs_t, action_t)
@@ -462,28 +523,38 @@ class DaggerRolloutWorker(Worker):
                 dones, rewards, real_extracted_obs = self.get_dones_and_rewards(
                     env_output, extracted_obs
                 )
-                
+
                 # Check if the step we're saving (t-1) had intervention (like hil-serl: only save intervened steps)
                 # Note: We save last_forward_inputs[stage_id], which is the forward_inputs from step t-1
                 should_save = True
                 if self.only_save_intervened:
                     step_t_minus_1_intervened = False
-                    
+
                     # Priority 1: Check real-world human intervention (from env_output, which is step t-1's output)
-                    if "intervene_flags" in env_output and env_output["intervene_flags"] is not None:
+                    if (
+                        "intervene_flags" in env_output
+                        and env_output["intervene_flags"] is not None
+                    ):
                         intervene_flags = env_output["intervene_flags"].bool()
                         step_t_minus_1_intervened = intervene_flags.any().item()
-                    
+
                     # Priority 2: Check simulation: if expert policy was used in step t-1
-                    if not step_t_minus_1_intervened and last_results[stage_id] is not None:
+                    if (
+                        not step_t_minus_1_intervened
+                        and last_results[stage_id] is not None
+                    ):
                         if "use_expert" in last_results[stage_id]:
-                            step_t_minus_1_intervened = bool(last_results[stage_id]["use_expert"])
-                    
+                            step_t_minus_1_intervened = bool(
+                                last_results[stage_id]["use_expert"]
+                            )
+
                     should_save = step_t_minus_1_intervened
-                
+
                 if should_save:
                     self.buffer_list[stage_id].dones.append(dones)
-                    self.buffer_list[stage_id].truncations.append(env_output["truncations"])
+                    self.buffer_list[stage_id].truncations.append(
+                        env_output["truncations"]
+                    )
                     self.buffer_list[stage_id].terminations.append(
                         env_output["terminations"]
                     )
@@ -496,7 +567,7 @@ class DaggerRolloutWorker(Worker):
 
                 with self.worker_timer():
                     actions, result = self.predict(extracted_obs)
-                
+
                 # For OpenPI, forward_inputs contains model_action but not action (environment-space)
                 # Add action to forward_inputs for consistency (even though this result is only used for bootstrapping)
                 if "action" not in result["forward_inputs"]:
@@ -512,8 +583,10 @@ class DaggerRolloutWorker(Worker):
                                 sample_tensor = extracted_obs["states"]
                             elif len(extracted_obs) > 0:
                                 sample_tensor = list(extracted_obs.values())[0]
-                            
-                            if sample_tensor is not None and torch.is_tensor(sample_tensor):
+
+                            if sample_tensor is not None and torch.is_tensor(
+                                sample_tensor
+                            ):
                                 device = sample_tensor.device
                             else:
                                 device = "cpu"
@@ -523,7 +596,7 @@ class DaggerRolloutWorker(Worker):
                     else:
                         actions_tensor = actions
                     result["forward_inputs"]["action"] = actions_tensor
-                
+
                 # For the final step, we only need prev_values for bootstrapping
                 # This is a special case that doesn't create a full ChunkStepResult
                 # prev_values must be added only when should_save=True to maintain consistency with dones length

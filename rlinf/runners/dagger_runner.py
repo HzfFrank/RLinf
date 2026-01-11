@@ -31,15 +31,15 @@ if TYPE_CHECKING:
         AsyncEmbodiedSACFSDPPolicy,
     )
     from rlinf.workers.actor.fsdp_actor_worker import EmbodiedFSDPActor
-    from rlinf.workers.actor.fsdp_sac_policy_worker import EmbodiedSACFSDPPolicy
     from rlinf.workers.actor.fsdp_dagger_worker import EmbodiedDAGGERFSDPPolicy
+    from rlinf.workers.actor.fsdp_sac_policy_worker import EmbodiedSACFSDPPolicy
     from rlinf.workers.env.async_env_worker import AsyncEnvWorker
     from rlinf.workers.env.env_worker import EnvWorker
     from rlinf.workers.rollout.hf.async_huggingface_worker import (
         AsyncMultiStepRolloutWorker,
     )
-    from rlinf.workers.rollout.hf.huggingface_worker import MultiStepRolloutWorker
     from rlinf.workers.rollout.hf.dagger_rollout_worker import DaggerRolloutWorker
+    from rlinf.workers.rollout.hf.huggingface_worker import MultiStepRolloutWorker
 
 
 class DaggerRunner:
@@ -47,9 +47,16 @@ class DaggerRunner:
         self,
         cfg: DictConfig,
         actor: Union[
-            "EmbodiedFSDPActor", "EmbodiedSACFSDPPolicy", "EmbodiedDAGGERFSDPPolicy", "AsyncEmbodiedSACFSDPPolicy"
+            "EmbodiedFSDPActor",
+            "EmbodiedSACFSDPPolicy",
+            "EmbodiedDAGGERFSDPPolicy",
+            "AsyncEmbodiedSACFSDPPolicy",
         ],
-        rollout: Union["MultiStepRolloutWorker", "AsyncMultiStepRolloutWorker", "DaggerRolloutWorker"],
+        rollout: Union[
+            "MultiStepRolloutWorker",
+            "AsyncMultiStepRolloutWorker",
+            "DaggerRolloutWorker",
+        ],
         env: Union["EnvWorker", "AsyncEnvWorker"],
         demo_buffer: Optional[SACReplayBuffer] = None,
         critic=None,

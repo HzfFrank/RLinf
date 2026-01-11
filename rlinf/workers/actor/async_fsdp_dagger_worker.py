@@ -16,8 +16,9 @@ import asyncio
 
 import jax
 import numpy as np
-import torch
 import openpi.models.model as _model
+import torch
+
 from rlinf.scheduler import Channel
 from rlinf.utils.distributed import all_reduce_dict
 from rlinf.utils.metric_utils import (
@@ -71,7 +72,7 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                 self.cfg.actor.global_batch_size
                 % (self.cfg.actor.micro_batch_size * self._world_size)
                 == 0
-                ), "global_batch_size is not divisible by micro_batch_size * world_size"
+            ), "global_batch_size is not divisible by micro_batch_size * world_size"
 
             self.gradient_accumulation = (
                 self.cfg.actor.global_batch_size
@@ -84,7 +85,9 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                 self.cfg.actor.global_batch_size // self._world_size
             )
             if self.demo_buffer is not None:
-                replay_batch = self.replay_buffer.sample(global_batch_size_per_rank // 2)
+                replay_batch = self.replay_buffer.sample(
+                    global_batch_size_per_rank // 2
+                )
                 demo_batch = self.demo_buffer.sample(global_batch_size_per_rank // 2)
                 global_batch = concat_batch(replay_batch, demo_batch)
             else:
@@ -108,7 +111,9 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                 )
 
                 obs_dict = {}
-                obs_prefix_keys = [k for k in batch.keys() if k.startswith("observation/")]
+                obs_prefix_keys = [
+                    k for k in batch.keys() if k.startswith("observation/")
+                ]
                 for key in obs_prefix_keys:
                     obs_dict[key] = batch[key]
                 if "tokenized_prompt" in batch:
@@ -117,7 +122,7 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                     obs_dict["tokenized_prompt_mask"] = batch["tokenized_prompt_mask"]
                 processed_obs = self.model.input_transform(obs_dict, transpose=False)
                 observation = _model.Observation.from_dict(processed_obs)
-                
+
                 if "model_action" in batch:
                     actions = batch["model_action"]
                 elif "action" in batch:

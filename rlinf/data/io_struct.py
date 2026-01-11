@@ -1379,13 +1379,16 @@ class EmbodiedRolloutResult:
         assert len(rollout_result_dict["dones"]) == len(
             rollout_result_dict["prev_values"]
         ), "dones and prev_values must have the same length"
-        
+
         # 处理 rewards 为 None 的情况（例如，所有保存的步骤的 rewards 都为 None）
-        rewards_len = len(rollout_result_dict["rewards"]) if rollout_result_dict["rewards"] is not None else 0
-        assert (
-            len(rollout_result_dict["dones"])
-            == rewards_len + self.rollout_epoch
-        ), f"dones length ({len(rollout_result_dict['dones'])}) must be the length of rewards ({rewards_len}) plus rollout_epoch ({self.rollout_epoch})"
+        rewards_len = (
+            len(rollout_result_dict["rewards"])
+            if rollout_result_dict["rewards"] is not None
+            else 0
+        )
+        assert len(rollout_result_dict["dones"]) == rewards_len + self.rollout_epoch, (
+            f"dones length ({len(rollout_result_dict['dones'])}) must be the length of rewards ({rewards_len}) plus rollout_epoch ({self.rollout_epoch})"
+        )
 
         return rollout_result_dict
 
@@ -1522,7 +1525,7 @@ class AsyncEmbodiedRolloutBuffer:
         if len(transition_dict) > 0:
             data["transitions"] = transition_dict
         data.update(cat_list_of_dict_tensor(forward_inputs))
-        
+
         splited_data = split_dict_to_chunk(data, split_size=split_num, dim=0)
 
         # Organize data

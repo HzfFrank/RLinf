@@ -19,14 +19,10 @@ import torch.multiprocessing as mp
 from omegaconf.omegaconf import OmegaConf
 
 from rlinf.config import validate_cfg
-from rlinf.runners.async_embodied_runner import AsyncEmbodiedRunner
 from rlinf.runners.async_dagger_runner import AsyncDaggerRunner
 from rlinf.scheduler import Cluster
 from rlinf.utils.placement import HybridComponentPlacement
 from rlinf.workers.env.async_env_worker import AsyncEnvWorker
-from rlinf.workers.rollout.hf.async_huggingface_worker import (
-    AsyncMultiStepRolloutWorker,
-)
 from rlinf.workers.rollout.hf.async_dagger_rollout_worker import (
     AsyncDaggerRolloutWorker,
 )
@@ -47,7 +43,9 @@ def main(cfg) -> None:
     # Create actor worker group
     actor_placement = component_placement.get_strategy("actor")
 
-    from rlinf.workers.actor.async_fsdp_dagger_worker import AsyncEmbodiedDAGGERFSDPPolicy
+    from rlinf.workers.actor.async_fsdp_dagger_worker import (
+        AsyncEmbodiedDAGGERFSDPPolicy,
+    )
 
     actor_worker_cls = AsyncEmbodiedDAGGERFSDPPolicy
 

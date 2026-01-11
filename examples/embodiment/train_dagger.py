@@ -22,10 +22,9 @@ from rlinf.config import validate_cfg
 from rlinf.runners.dagger_runner import DaggerRunner
 from rlinf.scheduler import Cluster
 from rlinf.utils.placement import HybridComponentPlacement
-from rlinf.workers.env.env_worker import EnvWorker
-from rlinf.workers.rollout.hf.huggingface_worker import MultiStepRolloutWorker
-from rlinf.workers.rollout.hf.dagger_rollout_worker import DaggerRolloutWorker
 from rlinf.workers.actor.fsdp_dagger_worker import EmbodiedDAGGERFSDPPolicy
+from rlinf.workers.env.env_worker import EnvWorker
+from rlinf.workers.rollout.hf.dagger_rollout_worker import DaggerRolloutWorker
 
 mp.set_start_method("spawn", force=True)
 

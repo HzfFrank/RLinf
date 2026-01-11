@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING, Optional
 
 from omegaconf.dictconfig import DictConfig
 
-from rlinf.runners.embodied_runner import EmbodiedRunner
 from rlinf.runners.dagger_runner import DaggerRunner
 from rlinf.scheduler import Channel
 from rlinf.scheduler import WorkerGroupFuncResult as Handle
@@ -27,16 +26,10 @@ from rlinf.utils.runner_utils import check_progress
 
 if TYPE_CHECKING:
     from rlinf.data.replay_buffer import SACReplayBuffer
-    from rlinf.workers.actor.async_fsdp_sac_policy_worker import (
-        AsyncEmbodiedSACFSDPPolicy,
-    )
     from rlinf.workers.actor.async_fsdp_dagger_worker import (
         AsyncEmbodiedDAGGERFSDPPolicy,
     )
     from rlinf.workers.env.async_env_worker import AsyncEnvWorker
-    from rlinf.workers.rollout.hf.async_huggingface_worker import (
-        AsyncMultiStepRolloutWorker,
-    )
     from rlinf.workers.rollout.hf.async_dagger_rollout_worker import (
         AsyncDaggerRolloutWorker,
     )
