@@ -1496,7 +1496,10 @@ class AsyncEmbodiedRolloutBuffer:
             truncations.append(await self.truncations.get())
             terminations.append(await self.terminations.get())
             rewards.append(await self.rewards.get())
-            transitions.append(await self.transitions.get())
+            # Transitions are optional (only added if model has q_head and last_extracted_obs is not None)
+            # Check if transitions queue has data, if not, skip (transitions are optional)
+            if self.transitions.qsize() > 0:
+                transitions.append(await self.transitions.get())
             forward_inputs.append(await self.forward_inputs.get())
 
         data = {
@@ -1505,9 +1508,13 @@ class AsyncEmbodiedRolloutBuffer:
             "truncations": torch.cat(truncations, dim=0).cpu().contiguous(),
             "terminations": torch.cat(terminations, dim=0).cpu().contiguous(),
             "rewards": torch.cat(rewards, dim=0).cpu().contiguous(),
-            "transitions": cat_list_of_dict_tensor(transitions),
         }
+        # Transitions are optional (only added if model has q_head and last_extracted_obs is not None)
+        transition_dict = cat_list_of_dict_tensor(transitions)
+        if len(transition_dict) > 0:
+            data["transitions"] = transition_dict
         data.update(cat_list_of_dict_tensor(forward_inputs))
+
         splited_data = split_dict_to_chunk(data, split_size=split_num, dim=0)
 
         # Organize data

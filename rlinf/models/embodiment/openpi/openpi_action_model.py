@@ -387,6 +387,8 @@ class OpenPi0ForRLActionPrediction(BasePolicy, PI0Pytorch):
             "denoise_inds": outputs["denoise_inds"],
             "tokenized_prompt": processed_obs["tokenized_prompt"],
             "tokenized_prompt_mask": processed_obs["tokenized_prompt_mask"],
+            "model_action": outputs["actions"],
+            "model_observation": processed_obs,
         }
         forward_inputs.update(to_process_obs)
         forward_inputs.pop("prompt", None)
