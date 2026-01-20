@@ -30,6 +30,7 @@ from rlinf.utils.nested_dict_process import (
 )
 from rlinf.utils.utils import clear_memory
 from rlinf.workers.actor.fsdp_dagger_worker import EmbodiedDAGGERFSDPPolicy
+from rlinf.models.embodiment.base_policy import ForwardType
 
 
 class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
@@ -90,7 +91,7 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
 
             metrics = {}
 
-            total_loss = 0.0
+            avg_loss = 0.0
 
             # ========== START: Choose different loop based on data source ==========
             if use_initial_data:
@@ -213,7 +214,7 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
 
                     with self.amp_context:
                         losses = self.model(
-                            forward_type="sft_forward",
+                            forward_type=ForwardType.SFT,
                             data={"observation": observation, "actions": actions},
                         )
                         if isinstance(losses, (list, tuple)):
@@ -224,13 +225,12 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                             )
                         loss = losses.mean()
 
-                    total_loss += loss.item()
                     loss = loss / self.gradient_accumulation
+                    avg_loss += loss.item()
                     with backward_ctx:
                         self.grad_scaler.scale(loss).backward()
-            # ========== END: Choose different loop based on data source ==========
 
-            # Manual gradient sync (temporary fix)
+            """hzf           
             torch.cuda.synchronize()
             if torch.distributed.is_initialized():
                 all_grads = []
@@ -248,6 +248,8 @@ class AsyncEmbodiedDAGGERFSDPPolicy(EmbodiedDAGGERFSDPPolicy):
                 )
 
             avg_loss = total_loss / self.gradient_accumulation
+            """
+
             grad_norm, lr_list = self.optimizer_step()
             self.optimizer.zero_grad(set_to_none=True)
 
