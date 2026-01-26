@@ -22,7 +22,7 @@ from omegaconf import DictConfig, OmegaConf, open_dict
 from tqdm import tqdm
 
 from rlinf.config import SupportedModel
-from rlinf.data.io_struct import ChunkStepResult, EmbodiedRolloutResult
+from rlinf.data.io_struct import ChunkStepResult, DaggerEmbodiedRolloutResult
 from rlinf.models import get_model
 from rlinf.scheduler import Channel, Cluster, Worker
 from rlinf.utils.metric_utils import compute_split_num
@@ -215,6 +215,7 @@ class DaggerRolloutWorker(Worker):
         """
 
         with torch.no_grad():
+            kwargs["mode"] = "eval"
             if use_expert and has_expert_model:
                 actions, result = self.expert_model.predict_action_batch(
                     env_obs=env_obs,
@@ -357,7 +358,7 @@ class DaggerRolloutWorker(Worker):
             self.reload_model()
 
         self.buffer_list = [
-            EmbodiedRolloutResult(rollout_epoch=self.cfg.algorithm.rollout_epoch)
+            DaggerEmbodiedRolloutResult(rollout_epoch=self.cfg.algorithm.rollout_epoch)
             for _ in range(self.num_pipeline_stages)
         ]
 
@@ -554,10 +555,14 @@ class DaggerRolloutWorker(Worker):
                         self.buffer_list[stage_id].prev_values.append(
                             result["prev_values"].cpu().contiguous()
                         )
+                    
+                    """hzf
                     if "prev_logprobs" in result:
                         self.buffer_list[stage_id].prev_logprobs.append(
                             result["prev_logprobs"].cpu().contiguous()
                         )
+                    """
+                    
                     if hasattr(self.hf_model, "q_head"):
                         self.buffer_list[stage_id].add_transition(
                             last_extracted_obs[stage_id], real_extracted_obs

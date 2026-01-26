@@ -34,6 +34,7 @@ from rlinf.utils.nested_dict_process import (
 )
 from rlinf.utils.utils import clear_memory
 from rlinf.workers.actor.fsdp_actor_worker import EmbodiedFSDPActor
+from rlinf.models.embodiment.base_policy import ForwardType
 
 
 class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
@@ -54,7 +55,7 @@ class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
         super().setup_model_and_optimizer()
         self.setup_buffer()
         # ========== START: Setup initial SFT data loader ==========
-        self.setup_initial_data_loader()
+        # self.setup_initial_data_loader()
         # ========== END: Setup initial SFT data loader ==========
         if self.cfg.actor.get("enable_offload", False):
             self.offload_param_and_grad()
@@ -179,35 +180,23 @@ class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
 
             metrics = {}
 
+            avg_loss = 0.0
+
             for idx, batch in enumerate(train_micro_batch_list):
                 backward_ctx = self.before_micro_batch(
                     self.model,
                     is_last_micro_batch=(idx + 1) == len(train_micro_batch_list),
                 )
-
-                # Simple version: assume batch contains obs and action in correct format
-                # Extract observation fields from batch (from forward_inputs)
-                # These have keys like "observation/image", "observation/state", etc.
-                obs_dict = {}
-                obs_prefix_keys = [k for k in batch.keys() if k.startswith("observation/")]
-                for key in obs_prefix_keys:
-                    obs_dict[key] = batch[key]
-                # Also extract tokenized prompt fields if present
-                if "tokenized_prompt" in batch:
-                    obs_dict["tokenized_prompt"] = batch["tokenized_prompt"]
-                if "tokenized_prompt_mask" in batch:
-                    obs_dict["tokenized_prompt_mask"] = batch["tokenized_prompt_mask"]
-                # Transform using model's input_transform to convert "observation/image" -> "image" etc.
-                # This matches what predict_action_batch does internally
-                processed_obs = self.model.input_transform(obs_dict, transpose=False)
-                observation = _model.Observation.from_dict(processed_obs)
                 
-                # For OpenPI, use model_action (model-internal-space) instead of action (environment-space)
-                # model_action is needed for sft_forward which expects model-internal-space actions
+                if "model_observation" in batch:
+                    observation = batch["model_observation"]
+                    observation = _model.Observation.from_dict(observation)
+                else:
+                    raise KeyError(
+                        f"Could not find 'model_observation' or 'observation' in batch. Available keys: {list(batch.keys())}"
+                    )
                 if "model_action" in batch:
                     actions = batch["model_action"]
-                elif "action" in batch:
-                    actions = batch["action"]
                 else:
                     raise KeyError(
                         f"Could not find 'model_action' or 'action' in batch. Available keys: {list(batch.keys())}"
@@ -224,7 +213,7 @@ class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
 
                 with self.amp_context:
                     losses = self.model(
-                        forward_type="sft_forward",
+                        forward_type=ForwardType.SFT,
                         data={"observation": observation, "actions": actions},
                     )
                     if isinstance(losses, (list, tuple)):
@@ -236,6 +225,7 @@ class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
                     loss = losses.mean()
 
                 loss = loss / self.gradient_accumulation
+                avg_loss += loss.item()
                 with backward_ctx:
                     self.grad_scaler.scale(loss).backward()
 
@@ -252,7 +242,7 @@ class EmbodiedDAGGERFSDPPolicy(EmbodiedFSDPActor):
             append_to_dict(
                 metrics,
                 {
-                    "loss": loss.item(),
+                    "loss": avg_loss,
                     "learning_rate": lr_value,
                     "grad_norm": grad_norm_value,
                 },

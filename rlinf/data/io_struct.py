@@ -1384,6 +1384,60 @@ class EmbodiedRolloutResult:
     def to_splitted_dict(self, split_size) -> list[dict[str, Any]]:
         return split_dict_to_chunk(self.to_dict(), split_size, dim=1)
 
+class DaggerEmbodiedRolloutResult(EmbodiedRolloutResult):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def to_dict(self):
+        rollout_result_dict = {}
+        rollout_result_dict["prev_logprobs"] = (
+            torch.stack(self.prev_logprobs, dim=0).cpu().contiguous()
+            if len(self.prev_logprobs) > 0
+            else None
+        )
+        rollout_result_dict["prev_values"] = (
+            torch.stack(self.prev_values, dim=0).cpu().contiguous()
+            if len(self.prev_values) > 0
+            else None
+        )
+        rollout_result_dict["dones"] = (
+            torch.stack(self.dones, dim=0).cpu().contiguous()
+            if len(self.dones) > 0
+            else None
+        )
+        rollout_result_dict["terminations"] = (
+            torch.stack(self.terminations, dim=0).cpu().contiguous()
+            if len(self.terminations) > 0
+            else None
+        )
+        rollout_result_dict["truncations"] = (
+            torch.stack(self.truncations, dim=0).cpu().contiguous()
+            if len(self.truncations) > 0
+            else None
+        )
+        rollout_result_dict["rewards"] = (
+            torch.stack(self.rewards, dim=0).cpu().contiguous()
+            if len(self.rewards) > 0
+            else None
+        )
+
+        merged_forward_inputs = stack_list_of_dict_tensor(self.forward_inputs)
+        for k in merged_forward_inputs.keys():
+            assert k not in [
+                "dones",
+                "terminations",
+                "truncations",
+                "rewards",
+                "prev_logprobs",
+                "prev_values",
+            ]
+            rollout_result_dict[k] = merged_forward_inputs[k]
+
+        transition_dict = stack_list_of_dict_tensor(self.transitions)
+        if len(transition_dict) > 0:
+            rollout_result_dict["transitions"] = transition_dict
+
+        return rollout_result_dict        
 
 @dataclass(kw_only=True)
 class AsyncEmbodiedRolloutBuffer:
