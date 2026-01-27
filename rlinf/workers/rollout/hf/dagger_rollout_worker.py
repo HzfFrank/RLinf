@@ -61,18 +61,15 @@ class DaggerRolloutWorker(Worker):
 
         # Start with actor.model as base to ensure all required fields are present
         # Then override with expert_model specific values
-        expert_model_config = copy.deepcopy(self.cfg.actor.model)
-        with open_dict(expert_model_config):
-            # Override with expert_model specific values from actor.expert_model
-            # hzf
-            # expert_model_config.path = self.cfg.rollout.expert_model.model_path
-            # Also set model_path for compatibility (get_model uses cfg.model_path)
-            expert_model_config.model_path = self.cfg.rollout.expert_model.model_path
+        if self.cfg.actor.get("expert_model", None) is not None:
+            expert_model_config = copy.deepcopy(self.cfg.actor.model)
+            with open_dict(expert_model_config):
+                expert_model_config.model_path = self.cfg.rollout.expert_model.model_path
 
-        self.expert_model = get_model(expert_model_config)
+            self.expert_model = get_model(expert_model_config)
+            self.expert_model.eval()
 
         self.hf_model.eval()
-        self.expert_model.eval()
 
         self.setup_sample_params()
         if self.enable_offload:
@@ -398,39 +395,6 @@ class DaggerRolloutWorker(Worker):
                     )
                     actions, result = self.predict(extracted_obs)
                     
-                    # For OpenPI, forward_inputs contains model_action but not action (environment-space)
-                    # We need to add action to forward_inputs so that update_intervene_actions can work
-                    # Store the current step's forward_inputs with action added for next step's intervene handling
-                    """hzf
-                    current_forward_inputs = result["forward_inputs"].copy()
-                    if "action" not in current_forward_inputs:
-                        # Add environment-space action to forward_inputs for intervene_actions handling
-                        # Convert actions from numpy to tensor if needed
-                        if isinstance(actions, np.ndarray):
-                            # Get device from extracted_obs
-                            if isinstance(extracted_obs, dict):
-                                sample_tensor = None
-                                if "main_images" in extracted_obs:
-                                    sample_tensor = extracted_obs["main_images"]
-                                elif "states" in extracted_obs:
-                                    sample_tensor = extracted_obs["states"]
-                                elif len(extracted_obs) > 0:
-                                    sample_tensor = list(extracted_obs.values())[0]
-                                
-                                if sample_tensor is not None and torch.is_tensor(sample_tensor):
-                                    device = sample_tensor.device
-                                else:
-                                    device = "cpu"
-                            else:
-                                device = "cpu"
-                            actions_tensor = torch.from_numpy(actions).to(device=device)
-                        else:
-                            actions_tensor = actions
-                        current_forward_inputs["action"] = actions_tensor
-                    """
-                    # Check if the step we're saving (t-1) had intervention (like hil-serl: only save intervened steps)
-                    # Note: We save last_forward_inputs[stage_id], which is the forward_inputs from step t-1
-                    # So we need to check if step t-1 had intervention, not step t
                     should_save = True
                     if self.only_save_intervened:
                         # Check for intervention in step t-1 (the step we're saving):
@@ -454,9 +418,7 @@ class DaggerRolloutWorker(Worker):
                         should_save = step_t_minus_1_intervened
                     
                     # Store last step's forward_inputs (which contains obs_{t-1} and action_{t-1})
-                    # This is consistent with SAC version and allows proper handling of intervene_actions
-                    # For SFT training, storing (obs_{t-1}, action_{t-1}) is mathematically equivalent to (obs_t, action_t)
-                    # since we're learning the same mapping function f: obs -> action
+
                     if should_save:
                         chunk_step_result = ChunkStepResult(
                             prev_logprobs=result["prev_logprobs"],
@@ -599,13 +561,15 @@ class DaggerRolloutWorker(Worker):
 
     def offload_model(self):
         self.hf_model = self.hf_model.to("cpu")
-        self.expert_model = self.expert_model.to("cpu")
+        if hasattr(self, "expert_model"):
+            self.expert_model = self.expert_model.to("cpu")
         gc.collect()
         torch.cuda.empty_cache()
 
     def reload_model(self):
         self.hf_model = self.hf_model.to(self.device)
-        self.expert_model = self.expert_model.to(self.device)
+        if hasattr(self, "expert_model"):
+            self.expert_model = self.expert_model.to(self.device)
 
     async def recv_env_output(
         self, input_channel: Channel, mode="train"
